@@ -14,7 +14,6 @@ def analyze_beats(y, sr):
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
         
-        # 修复: tempo 可能是数组，需要提取第一个元素
         if isinstance(tempo, np.ndarray):
             tempo_value = float(tempo[0]) if len(tempo) > 0 else float(tempo)
         else:
@@ -138,7 +137,7 @@ def analyze_song(audio_path, cache_dir="src/analysis_cache"):
 if __name__ == '__main__':
     # Make sure you have an audio file at this path to test!
     # Create the folder assets/audio/ and place a .wav file there.
-    test_audio_path = 'assets/audio/test2.wav'
+    test_audio_path = 'assets/audio/test.wav'
     
     if not os.path.exists(test_audio_path):
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
