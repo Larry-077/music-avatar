@@ -9,8 +9,14 @@ using the hierarchical bone system.
 - 眼睛方向动画
 - 嘴巴动画时间线支持
 """
-import pygame
+import sys
 import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, "../.."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import pygame
 import random
 import time
 from src.core.bone_system import Bone, Transform, SpriteVariant
@@ -110,6 +116,34 @@ class CharacterRig:
             placeholder = pygame.Surface((30, 15), pygame.SRCALPHA)
             pygame.draw.line(placeholder, (0, 0, 0), (0, 7), (30, 7), 2)
             self.mouth_variants = SpriteVariant({'default': placeholder})
+
+
+        self.l_arm_upper_sprite = self._load_image('arms/left_upperarm.png') 
+        self.r_arm_upper_sprite = self._load_image('arms/right_upperarm.png') 
+        self.l_arm_forearm_sprite = self._load_image('arms/left_forearm.png') 
+        self.r_arm_forearm_sprite = self._load_image('arms/right_forearm.png') 
+
+        # --- Load Hand variants from folder (assuming L_ and R_ prefixes) ---
+        hand_variants = self._load_asset_variants("hands")
+        
+        # 筛选左右手
+        l_hand_dict = {k: v for k, v in hand_variants.items() if k.startswith('L_')}
+        r_hand_dict = {k: v for k, v in hand_variants.items() if k.startswith('R_')}
+        
+        if l_hand_dict:
+            self.l_hand_variants = SpriteVariant(l_hand_dict, default=list(l_hand_dict.keys())[0])
+            print(f"  ✅ Loaded {len(l_hand_dict)} left hand variants.")
+        else:
+            print("  ⚠️  No left hand variants found.")
+            # 使用一个小的占位符作为回退
+            self.l_hand_variants = SpriteVariant({'default': pygame.Surface((20, 20), pygame.SRCALPHA)})
+            
+        if r_hand_dict:
+            self.r_hand_variants = SpriteVariant(r_hand_dict, default=list(r_hand_dict.keys())[0])
+            print(f"  ✅ Loaded {len(r_hand_dict)} right hand variants.")
+        else:
+            print("  ⚠️  No right hand variants found.")
+            self.r_hand_variants = SpriteVariant({'default': pygame.Surface((20, 20), pygame.SRCALPHA)})
         
         print("Assets loaded successfully!")
     
@@ -215,41 +249,76 @@ class CharacterRig:
         )
         face_bone.add_child(mouth_bone)
         
-        # --- LEFT ARM ---
-        left_arm_bone = Bone(
-            name="LeftArm",
-            local_transform=Transform(position=(-self.body_sprite.get_width() // 2, 0)),
-            sprite=None,
-            anchor_point=(0.5, 0.0)
+        body_half_width = self.body_sprite.get_width() // 2
+
+        # =========================================================
+        # --- LEFT ARM (Shoulder -> Elbow -> Hand) ---
+        # =========================================================
+
+        # 1. Shoulder_L (上臂)
+        shoulder_L = Bone(
+            name="Shoulder_L",
+            # 初始位置：位于身体左侧，略微向下偏移
+            local_transform=Transform(position=(-body_half_width + 14, -40), rotation=30), 
+            sprite=self.l_arm_upper_sprite,  # <-- 使用左上臂贴图
+            anchor_point=(0.5, 0.2) # 旋转中心在肩部（上臂顶端）
         )
-        body_bone.add_child(left_arm_bone)
+        body_bone.add_child(shoulder_L)
+
+        # 2. Elbow_L (下臂/前臂)
+        forearm_L = Bone(
+            name="Elbow_L",
+            # 位置：位于上臂 sprite 的底端
+            local_transform=Transform(position=(18, self.l_arm_upper_sprite.get_height()-30), rotation=10),
+            sprite=self.l_arm_forearm_sprite, # <-- 使用左下臂贴图
+            anchor_point=(0.6, 0.3) # 旋转中心在肘部（下臂顶端）
+        )
+        shoulder_L.add_child(forearm_L)
+
+        # 3. Hand_L (手部)
+        hand_L = Bone(
+            name="Hand_L",
+            # 位置：位于下臂 sprite 的底端
+            local_transform=Transform(position=(11, self.l_arm_forearm_sprite.get_height()-16)),
+            sprite=self.l_hand_variants.get_sprite(),
+            anchor_point=(0.5, 0.5) # 旋转中心在手腕
+        )
+        forearm_L.add_child(hand_L)
         
-        # --- LEFT HAND ---
-        left_hand_bone = Bone(
-            name="LeftHand",
-            local_transform=Transform(position=(0, 80)),
-            sprite=None,
-            anchor_point=(0.5, 0.0)
-        )
-        left_arm_bone.add_child(left_hand_bone)
+        # =========================================================
+        # --- RIGHT ARM (Shoulder -> Elbow -> Hand) ---
+        # =========================================================
         
-        # --- RIGHT ARM ---
-        right_arm_bone = Bone(
-            name="RightArm",
-            local_transform=Transform(position=(self.body_sprite.get_width() // 2, 0)),
-            sprite=None,
-            anchor_point=(0.5, 0.0)
+        # 1. Shoulder_R (上臂)
+        shoulder_R = Bone(
+            name="Shoulder_R",
+            # 初始位置：位于身体右侧
+            local_transform=Transform(position=(body_half_width-18, -40), rotation=-30), 
+            sprite=self.r_arm_upper_sprite, # <-- 使用右上臂贴图
+            anchor_point=(0.5, 0.2) 
         )
-        body_bone.add_child(right_arm_bone)
+        body_bone.add_child(shoulder_R)
+
+        # 2. Elbow_R (下臂/前臂)
+        forearm_R = Bone(
+            name="Elbow_R",
+            # 使用右上臂的高度来定位肘部关节
+            local_transform=Transform(position=(-19, self.r_arm_upper_sprite.get_height()-28), rotation=-10),
+            sprite=self.r_arm_forearm_sprite, # <-- 使用右下臂贴图
+            anchor_point=(0.4, 0.3) 
+        )
+        shoulder_R.add_child(forearm_R)
+
+        # 3. Hand_R (手部)
+        hand_R = Bone(
+            name="Hand_R",
+            # 使用右下臂的高度来定位手腕关节
+            local_transform=Transform(position=(-11, self.r_arm_forearm_sprite.get_height()-16)),
+            sprite=self.r_hand_variants.get_sprite(),
+            anchor_point=(0.5, 0.5) 
+        )
+        forearm_R.add_child(hand_R)
         
-        # --- RIGHT HAND ---
-        right_hand_bone = Bone(
-            name="RightHand",
-            local_transform=Transform(position=(0, 80)),
-            sprite=None,
-            anchor_point=(0.5, 0.0)
-        )
-        right_arm_bone.add_child(right_hand_bone)
         
         # Cache bone references
         self._cache_bones()
@@ -447,11 +516,48 @@ class CharacterRig:
         eyebrow = self.get_bone("Eyebrows")
         eyebrow.set_position(0, -50 + offset)
     
-    def set_arm_rotation(self, side: str, angle: float):
-        """Rotate arm ('left' or 'right')"""
-        bone_name = f"{side.capitalize()}Arm"
-        self.get_bone(bone_name).set_rotation(angle)
-    
+    # CharacterRig.py, 在 set_eyebrow_height 之后
+
+# ===== 新增：手臂控制方法 =====
+
+    def set_arm_joint_rotation(self, side: str, shoulder_angle: float, elbow_angle: float):
+        """
+        设置手臂的肩部和肘部旋转角度。
+        
+        Args:
+            side: 'left' or 'right'
+            shoulder_angle: 上臂相对于身体的旋转角度 (全局)
+            elbow_angle: 下臂相对于上臂的旋转角度 (局部)
+        """
+        
+        side_char = side[0].upper() # L 或 R
+        
+        # 注意我们现在使用 Shoulder_L/R 和 Elbow_L/R 骨骼名称
+        shoulder_bone = self.get_bone(f"Shoulder_{side_char}")
+        elbow_bone = self.get_bone(f"Elbow_{side_char}")
+        
+        if shoulder_bone:
+            shoulder_bone.set_rotation(shoulder_angle)
+        if elbow_bone:
+            elbow_bone.set_rotation(elbow_angle)
+
+    def set_hand_variant(self, side: str, variant_name: str):
+        """
+        切换手部的 Sprite 贴图。
+        """
+        if side.lower() == 'left':
+            hand_variants = self.l_hand_variants
+            hand_bone_name = "Hand_L"
+        elif side.lower() == 'right':
+            hand_variants = self.r_hand_variants
+            hand_bone_name = "Hand_R"
+        else:
+            return
+
+        # 尝试切换变体
+        if hand_variants.set_variant(variant_name):
+            self.get_bone(hand_bone_name).sprite = hand_variants.get_sprite()
+        
     # ===== 修改：update() 方法添加动画更新 =====
     def update(self):
         """Update all bone transforms and animations (call once per frame)"""
@@ -481,126 +587,160 @@ class CharacterRig:
         print("================================\n")
 
 
-# --- Test Script ---
+# --- Arm Tuning Tool ---
 if __name__ == "__main__":
-    print("Character Rig Builder - Test Mode")
-    print("=" * 50)
+    print("Character Arm Tuning Tool")
+    print("=========================")
     
-    # Initialize Pygame
+    # 初始化 Pygame
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
-    pygame.display.set_caption("Character Rig Test - With Blink Animation")
+    screen_width, screen_height = 1024, 768
+    screen = pygame.display.set_mode((screen_width, screen_height))
+    pygame.display.set_caption("Character Rig - Arm Tuning Mode")
     clock = pygame.time.Clock()
+    font = pygame.font.Font(None, 24)
+    big_font = pygame.font.Font(None, 36)
     
-    # Build character
+    # 初始化角色
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    # 假设你的 assets 文件夹在向上两级的目录，请根据实际情况调整路径
     project_root = os.path.abspath(os.path.join(current_dir, "../.."))
     assets_dir = os.path.join(project_root, "assets", "character")
     
+    # 检查路径是否存在，防止报错
+    if not os.path.exists(assets_dir):
+        print(f"Error: Assets directory not found at {assets_dir}")
+        print("Please adjust the 'assets_dir' path in the code.")
+        # 创建临时的伪造路径以允许程序运行（显示粉色方块）
+        assets_dir = "dummy_path"
+
     character = CharacterRig(assets_dir)
-    character.print_hierarchy()
     
-    # Generate eye timeline (optional)
-    character.generate_simple_eye_timeline(30)
+    # 设置角色初始位置到屏幕中心
+    character.set_screen_position(screen_width // 2, screen_height // 2)
+
+    # === 调试配置 ===
+    # 定义我们要调整的骨骼列表
+    tune_targets = [
+        "Shoulder_L", "Elbow_L", "Hand_L",
+        "Shoulder_R", "Elbow_R", "Hand_R"
+    ]
+    current_target_index = 0
     
-    # Main loop
+    # 移动速度
+    move_speed = 1.0
+    fast_multiplier = 5.0
+    
     running = True
-    debug_mode = True
-    anim_time = 0
-    
-    print("\nControls:")
-    print("  D - Toggle debug visualization")
-    print("  B - Toggle auto-blink")
-    print("  E - Manual blink")
-    print("  T - Toggle eye timeline")
-    print("  Arrow keys - Move character")
-    print("  Q/E - Rotate head")
-    print("  1-5 - Test eye positions")
-    print("  A/O/M - Test mouth shapes")
-    print("  ESC - Quit")
-    
+    show_bones = True
+
+    print("\n=== 操作指南 ===")
+    print("  [TAB]   : 切换要调整的关节 (左肩 -> 左肘 -> 左手 -> 右侧...)")
+    print("  [方向键]: 移动当前选中的关节 (调整相对位置)")
+    print("  [Shift] : 按住加速移动")
+    print("  [P]     : 在控制台打印当前所有坐标 (用于复制到代码中)")
+    print("  [D]     : 显示/隐藏骨骼线条")
+    print("  [ESC]   : 退出")
+    print("================\n")
+
     while running:
-        # Events
+        # 1. 事件处理
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                elif event.key == pygame.K_TAB:
+                    # 切换选中的骨骼
+                    current_target_index = (current_target_index + 1) % len(tune_targets)
                 elif event.key == pygame.K_d:
-                    debug_mode = not debug_mode
-                elif event.key == pygame.K_b:
-                    state = character.toggle_auto_blink()
-                    print(f"Auto-blink: {'ON' if state else 'OFF'}")
-                elif event.key == pygame.K_e:
-                    character.start_manual_blink()
-                    print("Manual blink triggered")
-                elif event.key == pygame.K_t:
-                    character.eye_timeline_enabled = not character.eye_timeline_enabled
-                    if character.eye_timeline_enabled:
-                        character.eye_timeline_start_time = time.time()
-                    print(f"Eye timeline: {'ON' if character.eye_timeline_enabled else 'OFF'}")
-                # Test eye positions
-                elif event.key == pygame.K_1:
-                    character.set_eye_variant("1_center")
-                elif event.key == pygame.K_2:
-                    character.set_eye_variant("1_left")
-                elif event.key == pygame.K_3:
-                    character.set_eye_variant("1_right")
-                elif event.key == pygame.K_4:
-                    character.set_eye_variant("1_up")
-                elif event.key == pygame.K_5:
-                    character.set_eye_variant("1_down")
-                # Test mouth shapes
-                elif event.key == pygame.K_a:
-                    character.set_mouth_variant("A")
-                elif event.key == pygame.K_o:
-                    character.set_mouth_variant("O")
-                elif event.key == pygame.K_m:
-                    character.set_mouth_variant("M")
-        
-        # Handle continuous key presses
+                    show_bones = not show_bones
+                elif event.key == pygame.K_p:
+                    # 打印当前配置
+                    print("\n=== Current Configuration (Copy these values) ===")
+                    for name in tune_targets:
+                        bone = character.get_bone(name)
+                        pos = bone.local_transform.position
+                        print(f"{name}: Position = ({pos[0]:.1f}, {pos[1]:.1f})")
+                    print("===============================================\n")
+
+        # 2. 持续按键处理 (用于平滑移动)
         keys = pygame.key.get_pressed()
-        root_pos = character.root.local_transform.position
-        if keys[pygame.K_LEFT]:
-            character.set_screen_position(root_pos[0] - 2, root_pos[1])
-        if keys[pygame.K_RIGHT]:
-            character.set_screen_position(root_pos[0] + 2, root_pos[1])
-        if keys[pygame.K_UP]:
-            character.set_screen_position(root_pos[0], root_pos[1] - 2)
-        if keys[pygame.K_DOWN]:
-            character.set_screen_position(root_pos[0], root_pos[1] + 2)
         
-        head_rot = character.get_bone("Head").local_transform.rotation
-        if keys[pygame.K_q]:
-            character.set_head_rotation(head_rot - 1)
-        if keys[pygame.K_e]:
-            character.set_head_rotation(head_rot + 1)
+        # 获取当前选中的骨骼
+        target_bone_name = tune_targets[current_target_index]
+        target_bone = character.get_bone(target_bone_name)
         
-        # Simple animation
-        anim_time += 0.05
-        bob = 10 * (1 + 0.5 * (1 + pygame.math.Vector2(0, 1).rotate(anim_time * 50).y))
-        character.set_head_position_offset(0, bob)
-        
-        # Update and draw
+        if target_bone:
+            current_speed = move_speed * (fast_multiplier if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] else 1.0)
+            
+            # 获取当前局部坐标
+            cx, cy = target_bone.local_transform.position
+            
+            # 修改坐标
+            if keys[pygame.K_LEFT]:
+                cx -= current_speed
+            if keys[pygame.K_RIGHT]:
+                cx += current_speed
+            if keys[pygame.K_UP]:
+                cy -= current_speed
+            if keys[pygame.K_DOWN]:
+                cy += current_speed
+                
+            # 应用回骨骼
+            target_bone.local_transform.position = (cx, cy)
+
+        # 3. 更新
         character.update()
         
-        screen.fill((50, 50, 50))
-        character.draw(screen, debug=debug_mode)
+        # 4. 渲染
+        screen.fill((60, 60, 60)) # 深灰色背景
         
-        # Info text
-        font = pygame.font.Font(None, 20)
-        fps_text = font.render(f"FPS: {clock.get_fps():.1f}", True, (255, 255, 255))
-        blink_text = font.render(
-            f"Blink: {'ON' if character.blink_enabled else 'OFF'} | "
-            f"Timeline: {'ON' if character.eye_timeline_enabled else 'OFF'}",
-            True, (100, 255, 100)
-        )
-        screen.blit(fps_text, (10, 10))
-        screen.blit(blink_text, (10, 35))
+        # 绘制角色
+        character.draw(screen, debug=show_bones)
         
+        # --- 绘制UI和高亮 ---
+        
+        # 高亮当前选中的骨骼位置
+        if target_bone:
+            # 获取全局坐标用于绘制提示圆圈
+            gx, gy = target_bone.get_world_position()
+            pygame.draw.circle(screen, (0, 255, 255), (int(gx), int(gy)), 10, 2) # 青色圆圈
+            
+            # 显示当前骨骼名称和坐标
+            info_text = f"Selected: {target_bone_name}"
+            coord_text = f"Local Pos: ({target_bone.local_transform.position[0]:.1f}, {target_bone.local_transform.position[1]:.1f})"
+            
+            # 在骨骼旁显示文字
+            text_surf = font.render(target_bone_name, True, (0, 255, 255))
+            screen.blit(text_surf, (gx + 15, gy - 10))
+
+        # 屏幕左上角的HUD
+        y_offset = 10
+        title = big_font.render("Arm Tuning Mode", True, (255, 255, 255))
+        screen.blit(title, (10, y_offset))
+        y_offset += 40
+        
+        controls = [
+            "[TAB] Switch Bone",
+            "[Arrows] Move Position",
+            "[Shift] Hold to speed up",
+            "[P] Print Values to Console",
+            f"Current Target: {tune_targets[current_target_index]}"
+        ]
+        
+        for line in controls:
+            col = (255, 255, 0) if "Current" in line else (200, 200, 200)
+            t = font.render(line, True, col)
+            screen.blit(t, (10, y_offset))
+            y_offset += 25
+
+        if target_bone:
+            val_text = font.render(f"Values: {target_bone.local_transform.position}", True, (0, 255, 255))
+            screen.blit(val_text, (10, y_offset + 10))
+
         pygame.display.flip()
         clock.tick(60)
-    
+
     pygame.quit()
-    print("\nTest complete!")

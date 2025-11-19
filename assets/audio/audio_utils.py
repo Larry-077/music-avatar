@@ -32,8 +32,8 @@ if __name__ == '__main__':
     os.makedirs('assets/audio', exist_ok=True)
     
     # NOTE: You need to place an actual MP3 file here to test this!
-    test_mp3 = 'assets/audio/test2.mp3'
-    output_wav = 'assets/audio/test2.wav'
+    test_mp3 = 'Hall of the Mountain King.mp3'
+    output_wav = 'Hall of the Mountain King.wav'
     
     if os.path.exists(test_mp3):
         convert_mp3_to_wav(test_mp3, output_wav)

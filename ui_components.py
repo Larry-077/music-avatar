@@ -364,6 +364,51 @@ class Label:
         surf = self.font.render(str(self.text), True, self.color)
         screen.blit(surf, (self.x, self.y))
 
+# 在 ui_components.py 中新增
+
+class ConnectionLine:
+    """绘制两个按钮之间的连线"""
+    def __init__(self, start_btn, end_btn, color=(100, 200, 255), width=3):
+        self.start_btn = start_btn
+        self.end_btn = end_btn
+        self.color = color
+        self.width = width
+
+    def draw(self, screen):
+        # 获取连接点（按钮边缘中心）
+        # 假设 Source 在左/上，Effector 在右/下
+        start_pos = (self.start_btn.rect.right, self.start_btn.rect.centery)
+        end_pos = (self.end_btn.rect.left, self.end_btn.rect.centery)
+        
+        # 绘制贝塞尔曲线或直线
+        pygame.draw.line(screen, self.color, start_pos, end_pos, self.width)
+        # 画端点小圆圈
+        pygame.draw.circle(screen, self.color, start_pos, 5)
+        pygame.draw.circle(screen, self.color, end_pos, 5)
+
+class SourceButton(Button):
+    """作为信号源的按钮（点击后保持高亮等待连接）"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.selected = False
+        self.signal_name = kwargs.get('text', '').lower() # 简化的 ID 获取方式
+
+    def draw(self, screen):
+        # 选中时改变外观
+        original_color = self.color
+        if self.selected:
+            self.color = (200, 150, 50) # 金色高亮
+            pygame.draw.rect(screen, (255, 255, 0), self.rect, 3, border_radius=self.border_radius)
+            
+        super().draw(screen)
+        self.color = original_color # 恢复
+
+class EffectorButton(Button):
+    """作为接收端的按钮"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.effector_name = kwargs.get('text', '').lower()
+
 
 # --- 测试代码 ---
 if __name__ == "__main__":

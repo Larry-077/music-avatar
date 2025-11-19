@@ -1,157 +1,185 @@
+"""
+Music Analyzer (Modular Version)
+================================
+Extracts normalized features from audio for 2D character animation.
+
+Outputs two types of data:
+1. Continuous Signals (0.0 - 1.0 arrays): Volume, Pitch, Centroid.
+2. Trigger Signals (Timestamp lists): Beats.
+"""
+
 import librosa
 import numpy as np
 import json
 import os
 
-# --- Core Analysis Functions ---
+# --- Configuration ---
+# HOP_LENGTH determines the "frame rate" of the analysis.
+# 512 samples @ 22050Hz ~= 43 frames per second (FPS).
+# This is high enough for smooth animation.
+HOP_LENGTH = 512 
+SAMPLE_RATE = 22050
+
+def normalize_array(arr, min_val=None, max_val=None, use_percentile=False):
+    """
+    Helper to normalize an array to 0.0 - 1.0 range.
+    
+    Args:
+        arr: Input numpy array.
+        min_val: Hardcoded min (optional).
+        max_val: Hardcoded max (optional).
+        use_percentile: If True, uses 95th percentile as max to ignore outliers.
+    """
+    # Handle empty or NaN
+    if len(arr) == 0: return arr
+    arr = np.nan_to_num(arr)
+    
+    # Determine Range
+    if min_val is None:
+        min_val = np.min(arr)
+    
+    if max_val is None:
+        if use_percentile:
+            # Use 98% as max to avoid one loud "pop" flattening the rest of the song
+            max_val = np.percentile(arr, 98)
+        else:
+            max_val = np.max(arr)
+            
+    # Avoid divide by zero
+    if max_val - min_val == 0:
+        return np.zeros_like(arr)
+    
+    # Linear Normalization formula
+    norm = (arr - min_val) / (max_val - min_val)
+    
+    # Clip to ensure 0.0 - 1.0 limits
+    return np.clip(norm, 0.0, 1.0)
+
+def analyze_pitch_log(y, sr):
+    """
+    Extracts Pitch (F0) and converts to normalized Log scale (MIDI).
+    Crucial for classical music to make low/high notes perceptually linear.
+    """
+    # 1. Extract F0 (Fundamental Frequency)
+    # fmin=C2 (~65Hz), fmax=C7 (~2093Hz) covers most instruments
+    f0, _, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), 
+                               fmax=librosa.note_to_hz('C7'),
+                               sr=sr, hop_length=HOP_LENGTH)
+    
+    f0 = np.nan_to_num(f0) # Replace NaNs with 0
+    
+    # 2. Convert to MIDI (Logarithmic Scale)
+    # 0 Hz creates -inf, so we mask it
+    midi_pitch = np.zeros_like(f0)
+    non_zero_mask = f0 > 0
+    midi_pitch[non_zero_mask] = librosa.hz_to_midi(f0[non_zero_mask])
+    
+    # 3. Normalize
+    # Classical range: C2 (MIDI 36) to C7 (MIDI 96)
+    # Any note outside this range is clamped
+    normalized_pitch = normalize_array(midi_pitch, min_val=36, max_val=96)
+    
+    # 4. Silence Handling
+    # Where f0 was 0, set normalized pitch to a neutral value (e.g., 0.0 or 0.5)
+    # Here we set to 0.0 (Low) so arms drop when silent
+    normalized_pitch[~non_zero_mask] = 0.0
+    
+    return normalized_pitch.tolist()
+
+def analyze_volume_rms(y, sr):
+    """
+    Extracts Volume (RMS) and normalizes using percentile capping.
+    """
+    rms = librosa.feature.rms(y=y, hop_length=HOP_LENGTH)[0]
+    
+    # Use percentile to handle dynamic range of classical music
+    return normalize_array(rms, use_percentile=True).tolist()
+
+def analyze_centroid(y, sr):
+    """
+    Extracts Spectral Centroid (Brightness/Timbre).
+    Low = Dark/Deep (Cello), High = Bright/Sharp (Violin/Brass).
+    """
+    cent = librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP_LENGTH)[0]
+    
+    # Log scale is often better for frequency-based features too, 
+    # but linear is okay for simple brightness mapping.
+    return normalize_array(cent, use_percentile=True).tolist()
 
 def analyze_beats(y, sr):
     """
-    Analyzes the beat and tempo of the audio.
-    Returns a list of timestamps for each detected beat.
+    Extracts Beat timestamps.
     """
-    try:
-        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-        
-        if isinstance(tempo, np.ndarray):
-            tempo_value = float(tempo[0]) if len(tempo) > 0 else float(tempo)
-        else:
-            tempo_value = float(tempo)
-            
-        print(f"Detected Tempo: {tempo_value:.2f} BPM")
-        return beat_times.tolist()
-    except Exception as e:
-        print(f"Error analyzing beats: {e}")
-        return []
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, hop_length=HOP_LENGTH)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=HOP_LENGTH)
+    return beat_times.tolist()
 
-def analyze_volume(y, sr):
-    """
-    Analyzes the volume (RMS Energy) of the audio over time.
-    Returns a list of volume values, normalized between 0.0 and 1.0.
-    """
-    try:
-        # Calculate RMS with a smaller frame length for more temporal detail
-        rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
-        
-        # Normalize the RMS values to a 0-1 range for easier mapping
-        rms_normalized = (rms - np.min(rms)) / (np.max(rms) - np.min(rms) + 1e-6) # Add epsilon to avoid division by zero
-        return rms_normalized.tolist()
-    except Exception as e:
-        print(f"Error analyzing volume: {e}")
-        return []
+# --- Main Orchestrator ---
 
-def analyze_pitch(y, sr):
+def analyze_song(audio_path, cache_dir="../analysis_cache"):
     """
-    Analyzes the dominant pitch of the audio over time.
-    Returns a list of pitch frequencies (in Hz). Zero means no clear pitch was found.
+    Main function to generate the standardized JSON.
     """
-    try:
-        # Estimate pitch using the pyin algorithm, which is often more robust
-        pitches, magnitudes, _ = librosa.pyin(y, fmin=librosa.note_to_hz('C2'), fmax=librosa.note_to_hz('C7'))
-        
-        # Where magnitude is low, we can assume it's unpitched
-        pitches[magnitudes < 0.1] = 0
-        
-        # Replace NaN with 0
-        pitches = np.nan_to_num(pitches)
-        return pitches.tolist()
-    except Exception as e:
-        print(f"Error analyzing pitch: {e}")
-        return []
-
-def analyze_articulation_proxy(y, sr):
-    """
-    A simple proxy for musical articulation (e.g., sharp vs. smooth sounds).
-    Analyzes the "spectral centroid," which is related to the brightness of a sound.
-    Higher values mean a brighter/sharper sound (like a cymbal).
-    Lower values mean a darker/smoother sound (like a cello).
-    Returns a list of normalized brightness values (0-1).
-    """
-    try:
-        spectral_centroids = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        
-        # Normalize for easier mapping
-        sc_normalized = (spectral_centroids - np.min(spectral_centroids)) / (np.max(spectral_centroids) - np.min(spectral_centroids) + 1e-6)
-        return sc_normalized.tolist()
-    except Exception as e:
-        print(f"Error analyzing articulation proxy: {e}")
-        return []
-
-
-# --- Main Orchestrator Function ---
-
-def analyze_song(audio_path, cache_dir="src/analysis_cache"):
-    """
-    Analyzes a given audio file for various musical elements.
-    Checks for a cached JSON file first to speed up subsequent loads.
+    filename = os.path.basename(audio_path)
+    name_no_ext = os.path.splitext(filename)[0]
+    cache_path = os.path.join(cache_dir, f"{name_no_ext}.json")
     
-    Args:
-        audio_path (str): The path to the audio file (e.g., 'assets/audio/classical_demo.wav').
-        cache_dir (str): The directory to store and load cached analysis files.
-        
-    Returns:
-        dict: A dictionary containing all the analysis data.
-    """
-    # Create a unique filename for the cache
-    audio_filename = os.path.basename(audio_path)
-    cache_filename = f"{os.path.splitext(audio_filename)[0]}.json"
-    cache_filepath = os.path.join(cache_dir, cache_filename)
-    
-    # --- Step 1: Check for Cached Analysis ---
-    if os.path.exists(cache_filepath):
-        print(f"Loading analysis from cache: {cache_filepath}")
-        with open(cache_filepath, 'r') as f:
+    # Check cache
+    if os.path.exists(cache_path):
+        print(f"📦 Loading cached analysis: {cache_path}")
+        with open(cache_path, 'r') as f:
             return json.load(f)
     
-    print(f"No cache found. Analyzing song: {audio_filename}")
+    print(f"🎵 Analyzing new audio: {filename}...")
     
-    # --- Step 2: Load Audio if no cache exists ---
+    # Load Audio
     try:
-        y, sr = librosa.load(audio_path, sr=None) # Load with original sample rate
+        y, sr = librosa.load(audio_path, sr=SAMPLE_RATE)
     except Exception as e:
-        print(f"Error loading audio file {audio_path}: {e}")
+        print(f"❌ Error loading audio: {e}")
         return None
-        
-    # --- Step 3: Run All Analysis Functions ---
-    analysis_data = {
-        "audio_filename": audio_filename,
-        "duration_seconds": librosa.get_duration(y=y, sr=sr),
-        "beats": analyze_beats(y, sr),
-        "volume": analyze_volume(y, sr),
-        "pitch": analyze_pitch(y, sr),
-        "articulation_proxy": analyze_articulation_proxy(y, sr),
-        # You can add emotion analysis here later
+
+    # Run Extraction
+    duration = librosa.get_duration(y=y, sr=sr)
+    
+    data = {
+        "info": {
+            "filename": filename,
+            "duration": duration,
+            "sample_rate": sr,
+            "hop_length": HOP_LENGTH,
+            "fps": sr / HOP_LENGTH  # Analysis frames per second
+        },
+        "continuous": {
+            "volume": analyze_volume_rms(y, sr),
+            "pitch": analyze_pitch_log(y, sr),
+            "timbre": analyze_centroid(y, sr) # renamed from articulation
+        },
+        "triggers": {
+            "beats": analyze_beats(y, sr)
+        }
     }
     
-    # --- Step 4: Save the Analysis to Cache for next time ---
-    os.makedirs(cache_dir, exist_ok=True) # Ensure the cache directory exists
-    print(f"Saving analysis to cache: {cache_filepath}")
-    with open(cache_filepath, 'w') as f:
-        json.dump(analysis_data, f, indent=2)
-        
-    return analysis_data
-
-
-# --- Example Usage (for testing this file directly) ---
-if __name__ == '__main__':
-    # Make sure you have an audio file at this path to test!
-    # Create the folder assets/audio/ and place a .wav file there.
-    test_audio_path = 'assets/audio/test.wav'
+    # Save Cache
+    os.makedirs(cache_dir, exist_ok=True)
+    with open(cache_path, 'w') as f:
+        json.dump(data, f)
     
-    if not os.path.exists(test_audio_path):
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print(f"TEST WARNING: Audio file not found at '{test_audio_path}'")
-        print("Please create the folders and add a .wav file to test this script.")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    print(f"✅ Analysis saved to: {cache_path}")
+    return data
+
+# --- Test ---
+if __name__ == "__main__":
+    # Change this to your actual file path for testing
+    test_path = "../../assets/audio/Hall of the Mountain King.wav" 
+    
+    if os.path.exists(test_path):
+        result = analyze_song(test_path)
+        if result:
+            print(f"\n--- Analysis Summary ---")
+            print(f"FPS: {result['info']['fps']:.2f}")
+            print(f"Volume Frames: {len(result['continuous']['volume'])}")
+            print(f"Pitch Frames: {len(result['continuous']['pitch'])}")
+            print(f"Beats Detected: {len(result['triggers']['beats'])}")
     else:
-        # Run the full analysis
-        song_data = analyze_song(test_audio_path)
-        
-        if song_data:
-            print("\n--- Analysis Complete ---")
-            print(f"Duration: {song_data['duration_seconds']:.2f} seconds")
-            print(f"Number of beats detected: {len(song_data['beats'])}")
-            print(f"Number of volume frames: {len(song_data['volume'])}")
-            print(f"Number of pitch frames: {len(song_data['pitch'])}")
-            print("\nFirst 5 beat timestamps:", song_data['beats'][:5])
+        print(f"⚠️ File not found: {test_path}")
