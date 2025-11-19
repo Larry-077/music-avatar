@@ -1,457 +1,180 @@
 """
-UI Components - 图形化界面组件
-================================
-提供按钮、滑块、面板等 UI 组件
+UI Components - Custom "Coolors" Palette Edition
+================================================
+Palette: Platinum, Dusk Blue, Steel Blue, Icy Blue, Grey Olive
 """
 
 import pygame
+import math
+FONT_NAME = "Helvetica"
 
+# --- New Color Palette (Based on your image) ---
+COLOR_BG = (231, 236, 239)       # #E7ECEF (Platinum) - 主背景
+COLOR_PANEL_BG = (255, 255, 255) # White - 面板背景 (比背景更亮，形成卡片感)
+COLOR_SHADOW = (139, 140, 137)   # #8B8C89 (Grey Olive) - 阴影/边框
+
+# 按钮颜色
+COLOR_BTN_NORMAL = (163, 206, 241)  # #A3CEF1 (Icy Blue) - 默认状态
+COLOR_BTN_HOVER = (96, 150, 186)    # #6096BA (Steel Blue) - 悬停状态
+COLOR_BTN_ACTIVE = (39, 76, 119)    # #274C77 (Dusk Blue) - 选中/激活状态
+
+# 文字与线条
+COLOR_TEXT_MAIN = (39, 76, 119)     # #274C77 (Dusk Blue) - 主标题/深色文字
+COLOR_TEXT_SUB = (139, 140, 137)    # #8B8C89 (Grey Olive) - 次要文字
+COLOR_TEXT_LIGHT = (255, 255, 255)  # White - 深色按钮上的文字
+COLOR_LINE = (96, 150, 186)         # #6096BA (Steel Blue) - 连线颜色
 
 class Button:
-    """可点击的按钮"""
-    
-    def __init__(self, x, y, width, height, text, 
-                 color=(70, 130, 180), hover_color=(100, 160, 210),
-                 text_color=(255, 255, 255), font_size=20):
-        """
-        创建按钮
-        
-        Args:
-            x, y: 按钮位置
-            width, height: 按钮尺寸
-            text: 按钮文字
-            color: 正常颜色
-            hover_color: 悬停颜色
-            text_color: 文字颜色
-            font_size: 字体大小
-        """
+    def __init__(self, x, y, width, height, text, font_size=18):
         self.rect = pygame.Rect(x, y, width, height)
         self.text = text
-        self.color = color
-        self.hover_color = hover_color
-        self.text_color = text_color
-        self.font = pygame.font.Font(None, font_size)
+        # 使用粗体字体让 UI 更现代
+        self.font = pygame.font.SysFont(FONT_NAME, font_size, bold=True)
         
         self.is_hovered = False
         self.is_pressed = False
-        self.enabled = True
+        self.selected = False 
+        self.active = False   
         
-        # 圆角半径
-        self.border_radius = 8
-    
+        self.radius = 15 # 稍微加大圆角
+
     def handle_event(self, event):
-        """
-        处理鼠标事件
-        
-        Returns:
-            bool: 如果按钮被点击返回 True
-        """
-        if not self.enabled:
-            return False
-        
         if event.type == pygame.MOUSEMOTION:
             self.is_hovered = self.rect.collidepoint(event.pos)
-        
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1 and self.is_hovered:
                 self.is_pressed = True
-        
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1 and self.is_pressed and self.is_hovered:
                 self.is_pressed = False
-                return True  # 按钮被点击！
+                return True
             self.is_pressed = False
-        
         return False
     
     def draw(self, screen):
-        """绘制按钮"""
-        # 选择颜色
-        if not self.enabled:
-            color = (100, 100, 100)
+        # 决定颜色
+        text_col = COLOR_TEXT_MAIN
+        
+        if self.selected or self.active:
+            color = COLOR_BTN_ACTIVE
+            text_col = COLOR_TEXT_LIGHT # 深蓝背景配白字
         elif self.is_pressed:
-            color = tuple(max(0, c - 30) for c in self.hover_color)
+            color = (80, 130, 160) # 按下时的中间色
+            text_col = COLOR_TEXT_LIGHT
         elif self.is_hovered:
-            color = self.hover_color
+            color = COLOR_BTN_HOVER
+            text_col = COLOR_TEXT_LIGHT
         else:
-            color = self.color
+            color = COLOR_BTN_NORMAL
+            text_col = COLOR_TEXT_MAIN # 浅蓝背景配深蓝字
+
+        # 绘制柔和的阴影 (向下偏移)
+        if not (self.selected or self.active):
+            shadow_rect = self.rect.copy()
+            shadow_rect.y += 4
+            # 使用半透明的 Grey Olive 做阴影会更自然
+            s = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(s, (*COLOR_SHADOW, 80), s.get_rect(), border_radius=self.radius)
+            screen.blit(s, shadow_rect.topleft)
+
+        # 绘制按钮实体
+        pygame.draw.rect(screen, color, self.rect, border_radius=self.radius)
         
-        # 绘制按钮背景（圆角矩形）
-        pygame.draw.rect(screen, color, self.rect, border_radius=self.border_radius)
-        
-        # 绘制边框
-        border_color = (255, 255, 255, 100) if self.is_hovered else (200, 200, 200, 50)
-        pygame.draw.rect(screen, border_color, self.rect, 2, border_radius=self.border_radius)
-        
+        # 选中时的边框强调 (Source Selected)
+        if self.selected:
+            pygame.draw.rect(screen, (255, 255, 255), self.rect, 3, border_radius=self.radius)
+            pygame.draw.rect(screen, COLOR_BTN_HOVER, self.rect, 1, border_radius=self.radius)
+
         # 绘制文字
-        text_surf = self.font.render(self.text, True, self.text_color)
+        text_surf = self.font.render(self.text, True, text_col)
         text_rect = text_surf.get_rect(center=self.rect.center)
         screen.blit(text_surf, text_rect)
 
+class SourceButton(Button):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.signal_id = ""
+        self.is_trigger = False
 
-class ToggleButton(Button):
-    """开关按钮（可切换状态）"""
-    
-    def __init__(self, x, y, width, height, text, initial_state=False,
-                 on_color=(50, 180, 100), off_color=(180, 50, 50), **kwargs):
-        """
-        创建开关按钮
-        
-        Args:
-            x, y: 位置
-            width, height: 尺寸
-            text: 文字
-            initial_state: 初始状态（True=ON, False=OFF）
-            on_color: ON 状态颜色
-            off_color: OFF 状态颜色
-            **kwargs: 传递给 Button 的其他参数
-        """
-        # 调用父类初始化（不传递 on_color 和 off_color）
-        super().__init__(x, y, width, height, text, **kwargs)
-        self.is_on = initial_state
-        self.on_color = on_color
-        self.off_color = off_color
-    
-    def handle_event(self, event):
-        """处理事件并切换状态"""
-        if super().handle_event(event):
-            self.is_on = not self.is_on
-            return True
-        return False
-    
+class EffectorButton(Button):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.effector_id = ""
+        self.is_trigger = False
+
+class ConnectionLine:
+    def __init__(self, start_btn, end_btn):
+        self.start_btn = start_btn
+        self.end_btn = end_btn
+        self.color = COLOR_LINE # Steel Blue
+        self.width = 4
+
     def draw(self, screen):
-        """绘制开关按钮"""
-        # 根据状态改变颜色
-        if self.is_on:
-            self.color = self.on_color
-            self.hover_color = tuple(min(255, c + 30) for c in self.on_color)
-        else:
-            self.color = self.off_color
-            self.hover_color = tuple(min(255, c + 30) for c in self.off_color)
+        start_pos = (self.start_btn.rect.right, self.start_btn.rect.centery)
+        end_pos = (self.end_btn.rect.left, self.end_btn.rect.centery)
         
-        super().draw(screen)
+        # 绘制贝塞尔曲线
+        self.draw_bezier(screen, start_pos, end_pos)
         
-        # 添加状态指示器
-        indicator_x = self.rect.right - 15
-        indicator_y = self.rect.centery
-        indicator_color = (100, 255, 100) if self.is_on else (255, 100, 100)
-        pygame.draw.circle(screen, indicator_color, (indicator_x, indicator_y), 5)
+        # 绘制端点 (实心圆 + 白边)
+        pygame.draw.circle(screen, self.color, start_pos, 6)
+        pygame.draw.circle(screen, (255,255,255), start_pos, 3)
+        
+        pygame.draw.circle(screen, self.color, end_pos, 6)
+        pygame.draw.circle(screen, (255,255,255), end_pos, 3)
 
-
-class Slider:
-    """滑动条"""
-    
-    def __init__(self, x, y, width, min_val, max_val, initial_val, label="", height=20):
-        """
-        创建滑动条
+    def draw_bezier(self, screen, p0, p3):
+        dist = abs(p3[0] - p0[0]) / 2
+        p1 = (p0[0] + dist, p0[1])
+        p2 = (p3[0] - dist, p3[1])
         
-        Args:
-            x, y: 位置
-            width: 宽度
-            min_val, max_val: 值范围
-            initial_val: 初始值
-            label: 标签文字
-            height: 高度
-        """
-        self.rect = pygame.Rect(x, y, width, height)
-        self.min_val = min_val
-        self.max_val = max_val
-        self.value = initial_val
-        self.label = label
-        
-        self.dragging = False
-        self.enabled = True
-        
-        # 样式
-        self.bar_color = (100, 100, 100)
-        self.fill_color = (70, 130, 180)
-        self.handle_color = (200, 200, 200)
-        self.handle_hover_color = (255, 255, 255)
-        
-        self.font = pygame.font.Font(None, 18)
-        
-        self.handle_rect = pygame.Rect(0, 0, 12, height + 6)
-        self._update_handle_position()
-    
-    def _update_handle_position(self):
-        """更新滑块手柄位置"""
-        ratio = (self.value - self.min_val) / (self.max_val - self.min_val)
-        handle_x = self.rect.x + int(ratio * self.rect.width)
-        self.handle_rect.centerx = handle_x
-        self.handle_rect.centery = self.rect.centery
-    
-    def handle_event(self, event):
-        """
-        处理鼠标事件
-        
-        Returns:
-            bool: 如果值改变返回 True
-        """
-        if not self.enabled:
-            return False
-        
-        changed = False
-        
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                # 点击滑块或滑条
-                if self.handle_rect.collidepoint(event.pos) or self.rect.collidepoint(event.pos):
-                    self.dragging = True
-                    changed = self._update_value_from_pos(event.pos[0])
-        
-        elif event.type == pygame.MOUSEBUTTONUP:
-            if event.button == 1:
-                self.dragging = False
-        
-        elif event.type == pygame.MOUSEMOTION:
-            if self.dragging:
-                changed = self._update_value_from_pos(event.pos[0])
-        
-        return changed
-    
-    def _update_value_from_pos(self, mouse_x):
-        """根据鼠标位置更新值"""
-        # 限制在滑条范围内
-        mouse_x = max(self.rect.x, min(self.rect.right, mouse_x))
-        
-        # 计算新值
-        ratio = (mouse_x - self.rect.x) / self.rect.width
-        new_value = self.min_val + ratio * (self.max_val - self.min_val)
-        
-        if new_value != self.value:
-            self.value = new_value
-            self._update_handle_position()
-            return True
-        return False
-    
-    def draw(self, screen):
-        """绘制滑动条"""
-        # 绘制标签
-        if self.label:
-            label_surf = self.font.render(f"{self.label}: {self.value:.2f}", True, (200, 200, 200))
-            screen.blit(label_surf, (self.rect.x, self.rect.y - 20))
-        
-        # 绘制滑条背景
-        pygame.draw.rect(screen, self.bar_color, self.rect, border_radius=self.rect.height // 2)
-        
-        # 绘制填充部分
-        fill_width = int((self.value - self.min_val) / (self.max_val - self.min_val) * self.rect.width)
-        fill_rect = pygame.Rect(self.rect.x, self.rect.y, fill_width, self.rect.height)
-        pygame.draw.rect(screen, self.fill_color, fill_rect, border_radius=self.rect.height // 2)
-        
-        # 绘制手柄
-        handle_color = self.handle_hover_color if self.dragging else self.handle_color
-        pygame.draw.circle(screen, handle_color, self.handle_rect.center, self.handle_rect.width // 2)
-        pygame.draw.circle(screen, (50, 50, 50), self.handle_rect.center, self.handle_rect.width // 2, 2)
-
-
-class Panel:
-    """UI 面板容器"""
-    
-    def __init__(self, x, y, width, height, title="", 
-                 bg_color=(40, 45, 50, 200), border_color=(100, 100, 100)):
-        """
-        创建面板
-        
-        Args:
-            x, y: 位置
-            width, height: 尺寸
-            title: 标题
-            bg_color: 背景颜色（支持透明度）
-            border_color: 边框颜色
-        """
-        self.rect = pygame.Rect(x, y, width, height)
-        self.title = title
-        self.bg_color = bg_color
-        self.border_color = border_color
-        
-        self.visible = True
-        self.draggable = False
-        self.dragging = False
-        self.drag_offset = (0, 0)
-        
-        self.font = pygame.font.Font(None, 24)
-        self.title_height = 30
-        
-        # 子组件
-        self.components = []
-    
-    def add_component(self, component):
-        """添加子组件"""
-        self.components.append(component)
-    
-    def handle_event(self, event):
-        """处理事件"""
-        if not self.visible:
-            return False
-        
-        # 处理拖拽
-        if self.draggable:
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    title_rect = pygame.Rect(self.rect.x, self.rect.y, self.rect.width, self.title_height)
-                    if title_rect.collidepoint(event.pos):
-                        self.dragging = True
-                        self.drag_offset = (event.pos[0] - self.rect.x, event.pos[1] - self.rect.y)
+        points = []
+        steps = 25
+        for t in range(steps + 1):
+            t /= steps
+            x = (1-t)**3*p0[0] + 3*(1-t)**2*t*p1[0] + 3*(1-t)*t**2*p2[0] + t**3*p3[0]
+            y = (1-t)**3*p0[1] + 3*(1-t)**2*t*p1[1] + 3*(1-t)*t**2*p2[1] + t**3*p3[1]
+            points.append((x, y))
             
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:
-                    self.dragging = False
-            
-            elif event.type == pygame.MOUSEMOTION:
-                if self.dragging:
-                    self.rect.x = event.pos[0] - self.drag_offset[0]
-                    self.rect.y = event.pos[1] - self.drag_offset[1]
-        
-        # 传递事件给子组件
-        for component in self.components:
-            if hasattr(component, 'handle_event'):
-                if component.handle_event(event):
-                    return True
-        
-        return False
-    
-    def draw(self, screen):
-        """绘制面板"""
-        if not self.visible:
-            return
-        
-        # 创建半透明表面
-        if len(self.bg_color) == 4:
-            surface = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
-            surface.fill(self.bg_color)
-            screen.blit(surface, self.rect.topleft)
-        else:
-            pygame.draw.rect(screen, self.bg_color, self.rect, border_radius=10)
-        
-        # 绘制边框
-        pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=10)
-        
-        # 绘制标题
-        if self.title:
-            title_surf = self.font.render(self.title, True, (255, 255, 255))
-            title_rect = title_surf.get_rect(midleft=(self.rect.x + 15, self.rect.y + self.title_height // 2))
-            screen.blit(title_surf, title_rect)
-            
-            # 标题下划线
-            line_y = self.rect.y + self.title_height
-            pygame.draw.line(screen, self.border_color, 
-                           (self.rect.x + 10, line_y), 
-                           (self.rect.right - 10, line_y), 1)
-        
-        # 绘制子组件
-        for component in self.components:
-            if hasattr(component, 'draw'):
-                component.draw(screen)
-
+        if len(points) > 1:
+            pygame.draw.lines(screen, self.color, False, points, self.width)
 
 class Label:
-    """文本标签"""
-    
-    def __init__(self, x, y, text, color=(255, 255, 255), font_size=20):
+    def __init__(self, x, y, text, size=20, color=COLOR_TEXT_MAIN, bold=False):
         self.x = x
         self.y = y
         self.text = text
         self.color = color
-        self.font = pygame.font.Font(None, font_size)
-    
+        self.font = pygame.font.SysFont(FONT_NAME, size, bold=bold)
+
     def set_text(self, text):
-        """更新文本"""
         self.text = text
-    
+
     def draw(self, screen):
-        """绘制标签"""
-        surf = self.font.render(str(self.text), True, self.color)
+        surf = self.font.render(self.text, True, self.color)
         screen.blit(surf, (self.x, self.y))
 
-# 在 ui_components.py 中新增
-
-class ConnectionLine:
-    """绘制两个按钮之间的连线"""
-    def __init__(self, start_btn, end_btn, color=(100, 200, 255), width=3):
-        self.start_btn = start_btn
-        self.end_btn = end_btn
-        self.color = color
-        self.width = width
+class Panel:
+    def __init__(self, x, y, width, height, title=""):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.title = title
+        self.font = pygame.font.SysFont(FONT_NAME, 24, bold=True)
 
     def draw(self, screen):
-        # 获取连接点（按钮边缘中心）
-        # 假设 Source 在左/上，Effector 在右/下
-        start_pos = (self.start_btn.rect.right, self.start_btn.rect.centery)
-        end_pos = (self.end_btn.rect.left, self.end_btn.rect.centery)
+        # 绘制白色卡片背景
+        pygame.draw.rect(screen, COLOR_PANEL_BG, self.rect, border_radius=20)
         
-        # 绘制贝塞尔曲线或直线
-        pygame.draw.line(screen, self.color, start_pos, end_pos, self.width)
-        # 画端点小圆圈
-        pygame.draw.circle(screen, self.color, start_pos, 5)
-        pygame.draw.circle(screen, self.color, end_pos, 5)
-
-class SourceButton(Button):
-    """作为信号源的按钮（点击后保持高亮等待连接）"""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.selected = False
-        self.signal_name = kwargs.get('text', '').lower() # 简化的 ID 获取方式
-
-    def draw(self, screen):
-        # 选中时改变外观
-        original_color = self.color
-        if self.selected:
-            self.color = (200, 150, 50) # 金色高亮
-            pygame.draw.rect(screen, (255, 255, 0), self.rect, 3, border_radius=self.border_radius)
-            
-        super().draw(screen)
-        self.color = original_color # 恢复
-
-class EffectorButton(Button):
-    """作为接收端的按钮"""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.effector_name = kwargs.get('text', '').lower()
-
-
-# --- 测试代码 ---
-if __name__ == "__main__":
-    pygame.init()
-    screen = pygame.display.set_mode((800, 600))
-    clock = pygame.time.Clock()
-    
-    # 创建测试组件
-    panel = Panel(50, 50, 300, 400, "Test Panel", draggable=True)
-    
-    button1 = Button(70, 100, 120, 40, "Click Me")
-    button2 = ToggleButton(210, 100, 120, 40, "Toggle", initial_state=True)
-    slider = Slider(70, 180, 260, 0, 100, 50, "Value")
-    label = Label(70, 250, "Click buttons or drag slider!", (200, 200, 200))
-    
-    panel.add_component(button1)
-    panel.add_component(button2)
-    panel.add_component(slider)
-    panel.add_component(label)
-    
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            
-            # 处理面板事件
-            panel.handle_event(event)
-            
-            # 检查按钮点击
-            if button1.handle_event(event):
-                print("Button 1 clicked!")
-            
-            if button2.handle_event(event):
-                print(f"Toggle: {'ON' if button2.is_on else 'OFF'}")
-            
-            if slider.handle_event(event):
-                label.set_text(f"Slider value: {slider.value:.1f}")
+        # 绘制非常淡的投影/边框，增加质感
+        pygame.draw.rect(screen, (255, 255, 255), self.rect, 2, border_radius=20)
         
-        screen.fill((30, 30, 35))
-        panel.draw(screen)
-        
-        pygame.display.flip()
-        clock.tick(60)
-    
-    pygame.quit()
+        if self.title:
+            title_surf = self.font.render(self.title, True, COLOR_TEXT_MAIN)
+            # 居中标题
+            title_rect = title_surf.get_rect(centerx=self.rect.centerx, top=self.rect.y + 25)
+            screen.blit(title_surf, title_rect)
+            
+            # 装饰线 (Steel Blue)
+            line_y = self.rect.y + 60
+            pygame.draw.line(screen, COLOR_BTN_HOVER, 
+                           (self.rect.x + 40, line_y), 
+                           (self.rect.right - 40, line_y), 2)

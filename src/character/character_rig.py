@@ -88,6 +88,7 @@ class CharacterRig:
         self.hat_sprite = self._load_image('hat.png')
         self.collar_sprite = self._load_image('collar.png')
         self.legs_sprite = self._load_image('legs.png')
+        self.feet_sprite = self._load_image('feet.png') 
         
         # --- Load eye variants from folder ---
         eye_variants = self._load_asset_variants("eyes")
@@ -106,11 +107,15 @@ class CharacterRig:
         # --- Load mouth variants from folder ---
         mouth_variants = self._load_asset_variants("mouth")
         if mouth_variants:
-            default_key = list(mouth_variants.keys())[min(4, len(mouth_variants)-1)]
+            target_default = "D_L_mid" 
+            
+            if target_default in mouth_variants:
+                default_key = target_default
+            else:
+                # 找不到就默认取第一个
+                default_key = list(mouth_variants.keys())[0]
+            
             self.mouth_variants = SpriteVariant(mouth_variants, default=default_key)
-            print(f"  ✅ Loaded {len(mouth_variants)} mouth variants from 'mouth/' folder:")
-            for name in mouth_variants.keys():
-                print(f"     - {name}")
         else:
             print("  ⚠️  No mouth variants found in 'mouth/' folder, creating placeholder")
             placeholder = pygame.Surface((30, 15), pygame.SRCALPHA)
@@ -145,6 +150,8 @@ class CharacterRig:
             print("  ⚠️  No right hand variants found.")
             self.r_hand_variants = SpriteVariant({'default': pygame.Surface((20, 20), pygame.SRCALPHA)})
         
+        self.eyebrows_sprite = self._load_image('eyebrows/Stan_Eyebrows0003.png')
+
         print("Assets loaded successfully!")
     
     def _build_skeleton(self):
@@ -168,6 +175,76 @@ class CharacterRig:
         )
         self.root.add_child(body_bone)
         
+        body_half_width = self.body_sprite.get_width() // 2
+
+        # =========================================================
+        # --- LEFT ARM (Shoulder -> Elbow -> Hand) ---
+        # =========================================================
+
+        # 1. Shoulder_L (上臂)
+        shoulder_L = Bone(
+            name="Shoulder_L",
+            # 初始位置：位于身体左侧，略微向下偏移
+            local_transform=Transform(position=(-body_half_width + 14+5, -44), rotation=30), 
+            sprite=self.l_arm_upper_sprite,  # <-- 使用左上臂贴图
+            anchor_point=(0.6, 0.2) # 旋转中心在肩部（上臂顶端）
+        )
+        body_bone.add_child(shoulder_L)
+
+        # 2. Elbow_L (下臂/前臂)
+        forearm_L = Bone(
+            name="Elbow_L",
+            # 位置：位于上臂 sprite 的底端
+            local_transform=Transform(position=(4, self.l_arm_upper_sprite.get_height()-25), rotation=10),
+            sprite=self.l_arm_forearm_sprite, # <-- 使用左下臂贴图
+            anchor_point=(0.6, 0.15) # 旋转中心在肘部（下臂顶端）
+        )
+        shoulder_L.add_child(forearm_L)
+
+        # 3. Hand_L (手部)
+        hand_L = Bone(
+            name="Hand_L",
+            # 位置：位于下臂 sprite 的底端
+            local_transform=Transform(position=(11, self.l_arm_forearm_sprite.get_height()-16)),
+            sprite=self.l_hand_variants.get_sprite(),
+            anchor_point=(0.5, 0.5) # 旋转中心在手腕
+        )
+        forearm_L.add_child(hand_L)
+        
+        # =========================================================
+        # --- RIGHT ARM (Shoulder -> Elbow -> Hand) ---
+        # =========================================================
+        
+        # 1. Shoulder_R (上臂)
+        shoulder_R = Bone(
+            name="Shoulder_R",
+            # 初始位置：位于身体右侧
+            local_transform=Transform(position=(body_half_width-18-5, -40), rotation=-30), 
+            sprite=self.r_arm_upper_sprite, # <-- 使用右上臂贴图
+            anchor_point=(0.4, 0.2) 
+        )
+        body_bone.add_child(shoulder_R)
+
+        # 2. Elbow_R (下臂/前臂)
+        forearm_R = Bone(
+            name="Elbow_R",
+            # 使用右上臂的高度来定位肘部关节
+            local_transform=Transform(position=(-4, self.r_arm_upper_sprite.get_height()-24), rotation=-10),
+            sprite=self.r_arm_forearm_sprite, # <-- 使用右下臂贴图
+            anchor_point=(0.4, 0.15) 
+        )
+        shoulder_R.add_child(forearm_R)
+
+        # 3. Hand_R (手部)
+        hand_R = Bone(
+            name="Hand_R",
+            # 使用右下臂的高度来定位手腕关节
+            local_transform=Transform(position=(-11, self.r_arm_forearm_sprite.get_height()-16)),
+            sprite=self.r_hand_variants.get_sprite(),
+            anchor_point=(0.5, 0.5) 
+        )
+        forearm_R.add_child(hand_R)
+
         # --- LEGS ---
         legs_bone = Bone(
             name="Legs",
@@ -176,6 +253,15 @@ class CharacterRig:
             anchor_point=(0.5, 0.0)
         )
         body_bone.add_child(legs_bone)
+
+        feet_bone = Bone(
+            name="Feet",
+            local_transform=Transform(position=(0, self.legs_sprite.get_height() - 8)), # 假设脚在腿的底部
+            sprite=self.feet_sprite,
+            anchor_point=(0.5, 1) # 中心缩放，产生"变大"效果
+        )
+        # 将脚挂载在腿上
+        legs_bone.add_child(feet_bone)
         
         # --- BODY SPRITE ---
         body_sprite_bone = Bone(
@@ -234,11 +320,11 @@ class CharacterRig:
         # --- EYEBROWS ---
         eyebrows_bone = Bone(
             name="Eyebrows",
-            local_transform=Transform(position=(0, -50)),
-            sprite=None,
+            local_transform=Transform(position=(0, -30)), # 默认位置在眼睛上方
+            sprite=self.eyebrows_sprite, # <--- 这里填入素材
             anchor_point=(0.5, 0.5)
         )
-        face_bone.add_child(eyebrows_bone)
+        head_bone.add_child(eyebrows_bone)
         
         # --- MOUTH ---
         mouth_bone = Bone(
@@ -249,75 +335,6 @@ class CharacterRig:
         )
         face_bone.add_child(mouth_bone)
         
-        body_half_width = self.body_sprite.get_width() // 2
-
-        # =========================================================
-        # --- LEFT ARM (Shoulder -> Elbow -> Hand) ---
-        # =========================================================
-
-        # 1. Shoulder_L (上臂)
-        shoulder_L = Bone(
-            name="Shoulder_L",
-            # 初始位置：位于身体左侧，略微向下偏移
-            local_transform=Transform(position=(-body_half_width + 14, -40), rotation=30), 
-            sprite=self.l_arm_upper_sprite,  # <-- 使用左上臂贴图
-            anchor_point=(0.5, 0.2) # 旋转中心在肩部（上臂顶端）
-        )
-        body_bone.add_child(shoulder_L)
-
-        # 2. Elbow_L (下臂/前臂)
-        forearm_L = Bone(
-            name="Elbow_L",
-            # 位置：位于上臂 sprite 的底端
-            local_transform=Transform(position=(18, self.l_arm_upper_sprite.get_height()-30), rotation=10),
-            sprite=self.l_arm_forearm_sprite, # <-- 使用左下臂贴图
-            anchor_point=(0.6, 0.3) # 旋转中心在肘部（下臂顶端）
-        )
-        shoulder_L.add_child(forearm_L)
-
-        # 3. Hand_L (手部)
-        hand_L = Bone(
-            name="Hand_L",
-            # 位置：位于下臂 sprite 的底端
-            local_transform=Transform(position=(11, self.l_arm_forearm_sprite.get_height()-16)),
-            sprite=self.l_hand_variants.get_sprite(),
-            anchor_point=(0.5, 0.5) # 旋转中心在手腕
-        )
-        forearm_L.add_child(hand_L)
-        
-        # =========================================================
-        # --- RIGHT ARM (Shoulder -> Elbow -> Hand) ---
-        # =========================================================
-        
-        # 1. Shoulder_R (上臂)
-        shoulder_R = Bone(
-            name="Shoulder_R",
-            # 初始位置：位于身体右侧
-            local_transform=Transform(position=(body_half_width-18, -40), rotation=-30), 
-            sprite=self.r_arm_upper_sprite, # <-- 使用右上臂贴图
-            anchor_point=(0.5, 0.2) 
-        )
-        body_bone.add_child(shoulder_R)
-
-        # 2. Elbow_R (下臂/前臂)
-        forearm_R = Bone(
-            name="Elbow_R",
-            # 使用右上臂的高度来定位肘部关节
-            local_transform=Transform(position=(-19, self.r_arm_upper_sprite.get_height()-28), rotation=-10),
-            sprite=self.r_arm_forearm_sprite, # <-- 使用右下臂贴图
-            anchor_point=(0.4, 0.3) 
-        )
-        shoulder_R.add_child(forearm_R)
-
-        # 3. Hand_R (手部)
-        hand_R = Bone(
-            name="Hand_R",
-            # 使用右下臂的高度来定位手腕关节
-            local_transform=Transform(position=(-11, self.r_arm_forearm_sprite.get_height()-16)),
-            sprite=self.r_hand_variants.get_sprite(),
-            anchor_point=(0.5, 0.5) 
-        )
-        forearm_R.add_child(hand_R)
         
         
         # Cache bone references
@@ -585,6 +602,30 @@ class CharacterRig:
         print("\n=== Character Bone Hierarchy ===")
         print_bone(self.root)
         print("================================\n")
+
+    def set_eyebrow_height(self, offset_y: float):
+        """
+        设置眉毛的垂直偏移量。
+        Args:
+            offset_y: 负数表示向上移（惊讶），正数表示向下移（生气/严肃）
+        """
+        # 获取眉毛的默认基准位置 (比如 -30)
+        base_y = -30 
+        
+        eyebrow = self.get_bone("Eyebrows")
+        if eyebrow:
+            # 保持 X 不变，只改 Y
+            current_x = eyebrow.local_transform.position[0]
+            eyebrow.set_position(current_x, base_y + offset_y)
+            
+    def set_face_scale(self, scale: float):
+        """
+        设置面部特征的整体缩放（可选，用于增强表现力）
+        """
+        # 可以让眼睛或嘴巴随强度稍微变大
+        mouth = self.get_bone("Mouth")
+        if mouth:
+            mouth.set_scale(scale, scale)
 
 
 # --- Arm Tuning Tool ---

@@ -25,7 +25,9 @@ class BindingEngine:
             'body_pump': BodyPumper(),
             'float':     Floater(),
             'face':      FaceExpression(),
-            'head_bob':  HeadBanger()
+            'head_bob':  HeadBanger(),
+            'foot_tap':  FootTapper(),
+            'lip_sync':  SimpleLipSync()
         }
         
         # 3. Bindings (The "Wiring")
@@ -62,28 +64,27 @@ class BindingEngine:
         # A. Process Continuous Bindings
         for sig_name, eff_name in self.continuous_bindings:
             if sig_name in self.signals and eff_name in self.effectors:
-                # Get 0-1 value
                 val = self.signals[sig_name].get_value(current_time)
-                # Drive effector
                 self.effectors[eff_name].update(val, character_rig)
                 
         # B. Process Trigger Bindings
-        # Check if beat happened this frame
+        # 1. Check trigger
         if self.signals['beat'].check(current_time):
-            # Fire all triggers connected to 'beat'
             for sig_name, eff_name in self.trigger_bindings:
                 if sig_name == 'beat':
                     self.effectors[eff_name].trigger()
         
-        # Update Trigger Effector Animations (they need to run every frame even if not triggered)
+        # 2. Update Trigger Animations (Decay logic)
         for _, eff_name in self.trigger_bindings:
-            # We assume trigger effectors have an update(dt, char) method
             effector = self.effectors[eff_name]
+            
+            # 🔧 [修正] 只要有 update 方法就调用，不再检查类型
             if hasattr(effector, 'update'):
-                # Note: Effectors class needs consistent update signature or type check
-                # Here we handle the HeadBanger specific signature
-                if isinstance(effector, HeadBanger):
+                try:
+                    # Trigger effectors need 'dt'
                     effector.update(dt, character_rig)
+                except TypeError:
+                    pass
 
     def remove_binding_by_effector(self, effector_id):
         """Remove any binding that targets this effector."""
