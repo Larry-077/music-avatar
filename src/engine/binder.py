@@ -78,7 +78,6 @@ class BindingEngine:
         for _, eff_name in self.trigger_bindings:
             effector = self.effectors[eff_name]
             
-            # 🔧 [修正] 只要有 update 方法就调用，不再检查类型
             if hasattr(effector, 'update'):
                 try:
                     # Trigger effectors need 'dt'
